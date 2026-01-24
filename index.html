@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ローン計算グラフ</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%; font-family: sans-serif;
+  }
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px;
+    box-sizing: border-box;
+  }
+
+  h2 { margin: 10px 0; text-align: center; }
+
+  label { display: block; margin-top: 8px; font-size: 16px; }
+
+  input, select, button {
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    margin: 4px 0;
+    box-sizing: border-box;
+  }
+
+  button {
+    cursor: pointer;
+    font-weight: bold;
+    background-color: #007BFF;
+    color: white;
+    border: none;
+    border-radius: 5px;
+  }
+
+  .chart-container {
+    flex: 1 1 auto;       /* 画面残りスペースで拡大 */
+    width: 100%;
+    min-height: 300px;    /* 最低高さ確保 */
+    margin-top: 10px;
+  }
+
+  canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+</style>
+</head>
+<body>
+
+<h2>ローン計算グラフ</h2>
+
+<label>元金合計（例: ¥1000000）:</label>
+<input type="text" id="principal" placeholder="例: ¥1000000" oninput="filterNumber(this)" />
+
+<label>年利（%）:</label>
+<input type="text" id="interest" placeholder="例: 5" oninput="filterNumber(this)" />
+
+<label>期間（年）:</label>
+<input type="text" id="years" placeholder="例: 10" oninput="filterNumber(this)" />
+
+<label>元金配分:</label>
+<select id="repaymentType">
+  <option value="front">最初に多く、後に少なく</option>
+  <option value="back">最初に少なく、後に多く</option>
+  <option value="equal">均等</option>
+</select>
+
+<button onclick="calculateLoan()">計算してグラフ表示</button>
+
+<div class="chart-container">
+  <canvas id="loanChart"></canvas>
+</div>
+
+<script>
+let chart;
+
+// 入力欄は数字のみ、小数点も許可、接頭語削除
+function filterNumber(input) {
+  let val = input.value.replace(/[^\d.]/g,'');
+  const parts = val.split('.');
+  if(parts.length > 2) val = parts[0] + '.' + parts.slice(1).join('');
+  input.value = val;
+}
+
+function calculateLoan() {
+  const principalInput = document.getElementById('principal').value.replace(/[^\d.]/g,'');
+  const totalPrincipal = parseFloat(principalInput);
+  const rate = parseFloat(document.getElementById('interest').value) / 100;
+  const years = parseInt(document.getElementById('years').value);
+  const type = document.getElementById('repaymentType').value;
+
+  if(isNaN(totalPrincipal) || isNaN(rate) || isNaN(years) || totalPrincipal <= 0 || years <=0) {
+    alert('すべての値を正しく入力してください。');
+    return;
+  }
+
+  // 元金配分を1円単位で計算
+  let principals = [];
+  let sumPrincipal = 0;
+  for(let i=1;i<=years;i++){
+    let p;
+    if(type === 'equal') p = Math.round(totalPrincipal / years);
+    else if(type === 'front') p = Math.round(totalPrincipal*(2*(years-i+1)/(years*(years+1))));
+    else if(type === 'back') p = Math.round(totalPrincipal*(2*i/(years*(years+1))));
+    principals.push(p);
+    sumPrincipal += p;
+  }
+  // 誤差調整
+  const diff = totalPrincipal - sumPrincipal;
+  principals[years-1] += diff;
+
+  const labels = [];
+  const cumulativePayments = [];
+  const cumulativeInterests = [];
+  let remainingPrincipal = totalPrincipal;
+  let totalPaid = 0;
+  let totalInterest = 0;
+
+  for(let year=0; year<years; year++){
+    const interestAmount = Math.round(remainingPrincipal * rate);
+    const payment = principals[year] + interestAmount;
+
+    totalPaid += payment;
+    totalInterest += interestAmount;
+    remainingPrincipal -= principals[year];
+
+    labels.push('年 ' + (year+1));
+    cumulativePayments.push(totalPaid);
+    cumulativeInterests.push(totalInterest);
+  }
+
+  const ctx = document.getElementById('loanChart').getContext('2d');
+  if(chart) chart.destroy();
+
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: '累計支払額（元金＋利息）', data: cumulativePayments, borderColor: 'blue', backgroundColor: 'rgba(0,0,255,0.1)', fill:true },
+        { label: '利息累計', data: cumulativeInterests, borderColor: 'red', backgroundColor: 'rgba(255,0,0,0.1)', fill:true }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: { display: true, text: 'ローン返済推移（1円単位）' },
+        tooltip: { mode: 'index', intersect: false }
+      },
+      interaction: { mode: 'nearest', intersect: false },
+      scales: { 
+        y: { beginAtZero:true, title:{display:true,text:'円'}}, 
+        x:{title:{display:true,text:'年数'}}
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>
